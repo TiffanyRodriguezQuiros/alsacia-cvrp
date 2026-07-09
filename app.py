@@ -38,7 +38,7 @@ with st.sidebar:
     cliente_sel = st.selectbox("Cliente", nombres_clientes)
     factor_demanda = st.slider("Factor de demanda (1.0 = sin cambio)", 0.0, 3.0, 1.0, 0.1)
 
-    nombre_escenario = st.text_input("Nombre de este escenario", value="Escenario 1")
+    nombre_escenario = st.text_input("Nombre de este escenario", value="Base")
     tiempo_limite = st.slider("Tiempo máximo de cálculo (segundos)", 5, 30, 15)
     boton_resolver = st.button("▶️ Recalcular rutas", type="primary")
 
@@ -130,6 +130,7 @@ tabla_flota = pd.DataFrame([{
     "Tipo": fila["Tipo"],
     "Usados": int(usados_por_tipo.get(fila["Tipo"], 0)),
     "Disponibles": int(fila["Unidades_Disponibles"]),
+    "Uso de flota": f"{(usados_por_tipo.get(fila['Tipo'], 0) / fila['Unidades_Disponibles'] * 100) if fila['Unidades_Disponibles'] > 0 else 0:.1f}%",
 } for _, fila in flota_actual.iterrows()])
 st.dataframe(tabla_flota, use_container_width=True, hide_index=True)
 
@@ -171,10 +172,10 @@ tabla = pd.DataFrame([{
     "Vehículo": f"{r['vehiculo']} #{i+1}",
     "Clientes": " → ".join(r["clientes"]),
     "Km": r["distancia_km"],
-    "Costo (₡)": r["costo_total"],
+    "Costo (₡)": f"₡{r['costo_total']:,.0f}",
     "Carga (cajas)": r["carga"],
     "Capacidad (cajas)": r["capacidad"],
-    "% Utilización": r["pct_utilizacion"],
+    "% Utilización": f"{r['pct_utilizacion']:.1f}%",
 } for i, r in enumerate(resultado["rutas"])])
 st.dataframe(tabla, use_container_width=True, hide_index=True)
 
@@ -195,10 +196,10 @@ if len(st.session_state.escenarios) > 1:
     st.subheader("📈 Comparación de escenarios")
     comparacion = pd.DataFrame([{
         "Escenario": nombre,
-        "Costo total (₡)": e["costo_total"],
+        "Costo total": f"₡{e['costo_total']:,.0f}",
         "Vehículos usados": len(e["resultado"]["rutas"]),
-        "Km totales": e["km_total"],
-        "Cajas no entregadas": e["cajas_no_entregadas"],
-        "Penalización (₡)": e["cajas_no_entregadas"] * parametros["penalizacion_crc"],
+        "Km totales": f"{e['km_total']:.1f}",
+        "Cajas no entregadas": int(e["cajas_no_entregadas"]),
+        "Penalización": f"₡{e['cajas_no_entregadas'] * parametros['penalizacion_crc']:,.0f}",
     } for nombre, e in st.session_state.escenarios.items()])
     st.dataframe(comparacion, use_container_width=True, hide_index=True)
