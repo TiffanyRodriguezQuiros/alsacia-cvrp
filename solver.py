@@ -140,18 +140,31 @@ def extraer_rutas(solucion, routing, manager, vehiculos, distancias, clientes_df
 
         v = vehiculos[k]
         costo_km = distancia_ruta * v["costo_km"]
+
+        # --- Carga: suma de la demanda de todos los clientes visitados en esta ruta ---
+        carga = int(sum(clientes_df.iloc[n]["Demanda_Cajas"] for n in secuencia))
+        capacidad = v["capacidad"]
+        pct_utilizacion = round(100 * carga / capacidad, 1) if capacidad > 0 else 0
+
         rutas.append({
             "vehiculo": v["tipo"],
             "clientes": [clientes_df.iloc[n]["Cliente"] for n in secuencia],
             "distancia_km": round(distancia_ruta, 1),
             "costo_total": round(v["costo_fijo"] + costo_km, 0),
+            "carga": carga,
+            "capacidad": capacidad,
+            "pct_utilizacion": pct_utilizacion,
         })
 
+    # --- Clientes sin atender, con su demanda para distinguir "sin pedido" de "entrega perdida" ---
     no_atendidos = []
     for nodo in range(1, len(clientes_df)):
         index = manager.NodeToIndex(nodo)
         if solucion.Value(routing.NextVar(index)) == index:
-            no_atendidos.append(clientes_df.iloc[nodo]["Cliente"])
+            no_atendidos.append({
+                "cliente": clientes_df.iloc[nodo]["Cliente"],
+                "cajas": int(clientes_df.iloc[nodo]["Demanda_Cajas"]),
+            })
 
     return {"rutas": rutas, "no_atendidos": no_atendidos}
 
@@ -186,5 +199,5 @@ if __name__ == "__main__":
         print("No se encontró solución factible.")
     else:
         for r in resultado["rutas"]:
-            print(f"{r['vehiculo']}: {' -> '.join(r['clientes'])} | {r['distancia_km']} km | costo {r['costo_total']:,.0f}")
-        print("No atendidos:", resultado["no_atendidos"])
+            print(f"{r['vehiculo']}: {' -> '.join(r['clientes'])} | {r['distancia_km']} km | costo {r['costo_total']:,.0f} | carga {r['carga']}/{r['capacidad']} ({r['pct_utilizacion']}%)")
+        print("No atendidos:", [(c["cliente"], c["cajas"]) for c in resultado["no_atendidos"]])

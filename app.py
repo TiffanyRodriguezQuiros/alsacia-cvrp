@@ -86,11 +86,14 @@ if boton_resolver:
     else:
         costo_total = sum(r["costo_total"] for r in resultado["rutas"])
         km_total = sum(r["distancia_km"] for r in resultado["rutas"])
+        cajas_no_entregadas = sum(c["cajas"] for c in resultado["no_atendidos"])
         st.session_state.escenarios[nombre_escenario] = {
             "resultado": resultado,
             "clientes": clientes_escenario,
+            "flota": flota_escenario,
             "costo_total": costo_total,
             "km_total": km_total,
+            "cajas_no_entregadas": cajas_no_entregadas,
         }
         st.session_state.ultimo_escenario = nombre_escenario
 
@@ -110,11 +113,25 @@ resultado = datos_escenario["resultado"]
 clientes_actual = datos_escenario["clientes"]
 
 st.subheader(f"📊 Resultados — {nombre_actual}")
+sin_pedido = [c for c in resultado["no_atendidos"] if c["cajas"] == 0]
+sin_atender_real = [c for c in resultado["no_atendidos"] if c["cajas"] > 0]
+
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Costo total", f"₡{datos_escenario['costo_total']:,.0f}")
 col2.metric("Vehículos usados", len(resultado["rutas"]))
 col3.metric("Km totales", f"{datos_escenario['km_total']:,.1f}")
-col4.metric("Clientes sin atender", len(resultado["no_atendidos"]))
+col4.metric("Clientes sin atender (pérdida real)", len(sin_atender_real))
+
+# ---------------- Vehículos usados por tipo ----------------
+st.subheader("Vehículos usados por tipo")
+flota_actual = datos_escenario["flota"]
+usados_por_tipo = pd.Series([r["vehiculo"] for r in resultado["rutas"]]).value_counts()
+tabla_flota = pd.DataFrame([{
+    "Tipo": fila["Tipo"],
+    "Usados": int(usados_por_tipo.get(fila["Tipo"], 0)),
+    "Disponibles": int(fila["Unidades_Disponibles"]),
+} for _, fila in flota_actual.iterrows()])
+st.dataframe(tabla_flota, use_container_width=True, hide_index=True)
 
 # ---------------- Mapa interactivo ----------------
 colores = ["#e63946", "#457b9d", "#2a9d8f", "#f4a261", "#8338ec",
@@ -155,11 +172,23 @@ tabla = pd.DataFrame([{
     "Clientes": " → ".join(r["clientes"]),
     "Km": r["distancia_km"],
     "Costo (₡)": r["costo_total"],
+    "Carga (cajas)": r["carga"],
+    "Capacidad (cajas)": r["capacidad"],
+    "% Utilización": r["pct_utilizacion"],
 } for i, r in enumerate(resultado["rutas"])])
-st.dataframe(tabla, use_container_width=True)
+st.dataframe(tabla, use_container_width=True, hide_index=True)
 
-if resultado["no_atendidos"]:
-    st.warning("Clientes sin atender: " + ", ".join(resultado["no_atendidos"]))
+# ---------------- Clientes sin atender: distinguir "sin pedido" de "pérdida real" ----------------
+if sin_pedido:
+    st.info(
+        "Cliente(s) sin pedido del día: "
+        + ", ".join(f"{c['cliente']}" for c in sin_pedido)
+    )
+if sin_atender_real:
+    st.warning(
+        "Clientes sin atender (entrega perdida): "
+        + ", ".join(f"{c['cliente']} ({c['cajas']} cajas)" for c in sin_atender_real)
+    )
 
 # ---------------- Comparación de escenarios ----------------
 if len(st.session_state.escenarios) > 1:
@@ -168,6 +197,8 @@ if len(st.session_state.escenarios) > 1:
         "Escenario": nombre,
         "Costo total (₡)": e["costo_total"],
         "Vehículos usados": len(e["resultado"]["rutas"]),
-        "Clientes sin atender": len(e["resultado"]["no_atendidos"]),
+        "Km totales": e["km_total"],
+        "Cajas no entregadas": e["cajas_no_entregadas"],
+        "Penalización (₡)": e["cajas_no_entregadas"] * parametros["penalizacion_crc"],
     } for nombre, e in st.session_state.escenarios.items()])
-    st.dataframe(comparacion, use_container_width=True)
+    st.dataframe(comparacion, use_container_width=True, hide_index=True)
