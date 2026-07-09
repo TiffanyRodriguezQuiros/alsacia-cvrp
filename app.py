@@ -84,13 +84,17 @@ if boton_resolver:
     if resultado is None:
         st.error("No se encontró una solución factible con estos parámetros.")
     else:
-        costo_total = sum(r["costo_total"] for r in resultado["rutas"])
+        costo_transporte = sum(r["costo_total"] for r in resultado["rutas"])
         km_total = sum(r["distancia_km"] for r in resultado["rutas"])
         cajas_no_entregadas = sum(c["cajas"] for c in resultado["no_atendidos"])
+        penalizacion = cajas_no_entregadas * parametros["penalizacion_crc"]
+        costo_total = costo_transporte + penalizacion
         st.session_state.escenarios[nombre_escenario] = {
             "resultado": resultado,
             "clientes": clientes_escenario,
             "flota": flota_escenario,
+            "costo_transporte": costo_transporte,
+            "penalizacion": penalizacion,
             "costo_total": costo_total,
             "km_total": km_total,
             "cajas_no_entregadas": cajas_no_entregadas,
@@ -116,11 +120,15 @@ st.subheader(f"📊 Resultados — {nombre_actual}")
 sin_pedido = [c for c in resultado["no_atendidos"] if c["cajas"] == 0]
 sin_atender_real = [c for c in resultado["no_atendidos"] if c["cajas"] > 0]
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Costo total", f"₡{datos_escenario['costo_total']:,.0f}")
-col2.metric("Vehículos usados", len(resultado["rutas"]))
-col3.metric("Km totales", f"{datos_escenario['km_total']:,.1f}")
-col4.metric("Clientes sin atender (pérdida real)", len(sin_atender_real))
+col1, col2, col3 = st.columns(3)
+col1.metric("Costo transporte", f"₡{datos_escenario['costo_transporte']:,.0f}")
+col2.metric("Penalización", f"₡{datos_escenario['penalizacion']:,.0f}")
+col3.metric("Costo total", f"₡{datos_escenario['costo_total']:,.0f}")
+
+col4, col5, col6 = st.columns(3)
+col4.metric("Vehículos usados", len(resultado["rutas"]))
+col5.metric("Km totales", f"{datos_escenario['km_total']:,.1f}")
+col6.metric("Clientes sin atender (pérdida real)", len(sin_atender_real))
 
 # ---------------- Vehículos usados por tipo ----------------
 st.subheader("Vehículos usados por tipo")
@@ -179,27 +187,42 @@ tabla = pd.DataFrame([{
 } for i, r in enumerate(resultado["rutas"])])
 st.dataframe(tabla, use_container_width=True, hide_index=True)
 
-# ---------------- Clientes sin atender: distinguir "sin pedido" de "pérdida real" ----------------
+# ---------------- Clientes sin atender: "sin pedido" (informativo) vs. "entrega perdida" (tabla) ----------------
 if sin_pedido:
     st.info(
         "Cliente(s) sin pedido del día: "
         + ", ".join(f"{c['cliente']}" for c in sin_pedido)
     )
+
 if sin_atender_real:
-    st.warning(
-        "Clientes sin atender (entrega perdida): "
-        + ", ".join(f"{c['cliente']} ({c['cajas']} cajas)" for c in sin_atender_real)
-    )
+    st.subheader("Clientes sin atender — entrega perdida")
+    penalizacion_unitaria = parametros["penalizacion_crc"]
+    filas_perdida = [{
+        "Cliente": c["cliente"],
+        "Cajas no entregadas": int(c["cajas"]),
+        "Penalización": f"₡{c['cajas'] * penalizacion_unitaria:,.0f}",
+    } for c in sin_atender_real]
+
+    total_cajas = sum(c["cajas"] for c in sin_atender_real)
+    total_penalizacion = total_cajas * penalizacion_unitaria
+    filas_perdida.append({
+        "Cliente": "Total",
+        "Cajas no entregadas": int(total_cajas),
+        "Penalización": f"₡{total_penalizacion:,.0f}",
+    })
+
+    st.dataframe(pd.DataFrame(filas_perdida), use_container_width=True, hide_index=True)
 
 # ---------------- Comparación de escenarios ----------------
 if len(st.session_state.escenarios) > 1:
     st.subheader("📈 Comparación de escenarios")
     comparacion = pd.DataFrame([{
         "Escenario": nombre,
+        "Costo transporte": f"₡{e['costo_transporte']:,.0f}",
+        "Penalización": f"₡{e['penalizacion']:,.0f}",
         "Costo total": f"₡{e['costo_total']:,.0f}",
         "Vehículos usados": len(e["resultado"]["rutas"]),
         "Km totales": f"{e['km_total']:.1f}",
         "Cajas no entregadas": int(e["cajas_no_entregadas"]),
-        "Penalización": f"₡{e['cajas_no_entregadas'] * parametros['penalizacion_crc']:,.0f}",
     } for nombre, e in st.session_state.escenarios.items()])
     st.dataframe(comparacion, use_container_width=True, hide_index=True)
